@@ -23,7 +23,7 @@ export class WindowManager {
       frame: false, // Custom titlebar
       titleBarStyle: 'hidden',
       backgroundColor: '#1a1a1a',
-      show: false, // Don't show until ready
+      show: this.isDev, // Show immediately in dev mode to prevent app exit
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -35,9 +35,7 @@ export class WindowManager {
     // Load the app
     if (this.isDev) {
       console.log('Loading dev URL: http://localhost:5173');
-      this.mainWindow.loadURL('http://localhost:5173').catch((err) => {
-        console.error('Failed to load URL:', err);
-      });
+      this.loadDevURL(this.mainWindow);
       // Open DevTools in development
       this.mainWindow.webContents.openDevTools();
     } else {
@@ -53,6 +51,16 @@ export class WindowManager {
       this.mainWindow?.show();
       this.mainWindow?.focus();
     });
+
+    // Fallback: show window after a delay if ready-to-show doesn't fire (dev mode)
+    if (this.isDev) {
+      setTimeout(() => {
+        if (this.mainWindow && !this.mainWindow.isVisible()) {
+          console.log('Showing window via fallback...');
+          this.mainWindow.show();
+        }
+      }, 5000);
+    }
 
     // Handle external links
     this.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -114,5 +122,35 @@ export class WindowManager {
     } else {
       this.showMainWindow();
     }
+  }
+
+  private loadDevURL(window: BrowserWindow, maxRetries = 10): void {
+    const url = 'http://localhost:5173';
+    let retryCount = 0;
+
+    // Handle failed loads and retry - set up BEFORE initial load
+    window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame) return; // Only handle main frame failures
+
+      if (retryCount < maxRetries) {
+        retryCount++;
+        console.log(`Failed to load (${errorDescription}). Retrying ${retryCount}/${maxRetries}...`);
+        setTimeout(() => {
+          if (!window.isDestroyed()) {
+            window.loadURL(url).catch(() => {});
+          }
+        }, 2000);
+      } else {
+        console.error('Max retries reached. Please check that Vite dev server is running.');
+      }
+    });
+
+    // Add a small delay before initial load to ensure Vite is fully ready
+    setTimeout(() => {
+      window.loadURL(url).catch((err) => {
+        console.log('Initial load attempt:', err.message);
+        // The did-fail-load handler will retry
+      });
+    }, 1000);
   }
 }

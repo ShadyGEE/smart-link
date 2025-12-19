@@ -4,7 +4,11 @@ import { useAgentStore } from '../store/agentStore';
 const AgentPage: React.FC = () => {
   const [input, setInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   const { messages, isLoading, sendMessage, suggestions } = useAgentStore();
 
@@ -27,11 +31,84 @@ const AgentPage: React.FC = () => {
 
   const handleVoiceToggle = async () => {
     if (isRecording) {
-      await window.api.voice.stopRecognition();
+      // Stop recording
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
       setIsRecording(false);
+      setVoiceStatus('Processing...');
     } else {
-      await window.api.voice.startRecognition();
-      setIsRecording(true);
+      // Start recording
+      try {
+        setVoiceStatus('Requesting microphone access...');
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+          }
+        });
+
+        audioChunksRef.current = [];
+        const mediaRecorder = new MediaRecorder(stream, {
+          mimeType: 'audio/webm;codecs=opus'
+        });
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          // Stop all tracks
+          stream.getTracks().forEach(track => track.stop());
+
+          if (audioChunksRef.current.length === 0) {
+            setVoiceStatus('');
+            return;
+          }
+
+          setIsTranscribing(true);
+          setVoiceStatus('Transcribing...');
+
+          try {
+            // Convert blob to ArrayBuffer
+            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+            const arrayBuffer = await audioBlob.arrayBuffer();
+
+            // Send to backend for transcription
+            const result = await window.api.voice.transcribe(arrayBuffer, 16000);
+
+            if (result.success && result.text) {
+              setInput(prev => prev + (prev ? ' ' : '') + result.text.trim());
+              setVoiceStatus('');
+            } else {
+              setVoiceStatus(result.error || 'Transcription failed');
+              setTimeout(() => setVoiceStatus(''), 3000);
+            }
+          } catch (error) {
+            console.error('Transcription error:', error);
+            setVoiceStatus('Transcription failed');
+            setTimeout(() => setVoiceStatus(''), 3000);
+          } finally {
+            setIsTranscribing(false);
+          }
+        };
+
+        mediaRecorderRef.current = mediaRecorder;
+        mediaRecorder.start(1000); // Collect data every second
+        setIsRecording(true);
+        setVoiceStatus('Recording... Click to stop');
+
+        // Notify backend
+        await window.api.voice.startRecognition();
+      } catch (error) {
+        console.error('Failed to start recording:', error);
+        setVoiceStatus('Microphone access denied');
+        setTimeout(() => setVoiceStatus(''), 3000);
+      }
     }
   };
 
@@ -131,21 +208,38 @@ const AgentPage: React.FC = () => {
           </div>
 
           {/* Input area */}
-          <div className="p-4 border-t border-gray-200 dark:border-dark-border">
+          <div className="p-4 border-t border-gray-200 dark:border-dark-border relative">
+            {voiceStatus && (
+              <div className="absolute -top-8 left-0 right-0 text-center">
+                <span className="text-sm text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 px-3 py-1 rounded-full">
+                  {voiceStatus}
+                </span>
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={handleVoiceToggle}
+                disabled={isTranscribing}
                 className={`p-3 rounded-xl transition-colors ${
                   isRecording
-                    ? 'bg-red-500 text-white pulse-recording'
+                    ? 'bg-red-500 text-white animate-pulse'
+                    : isTranscribing
+                    ? 'bg-yellow-500 text-white cursor-wait'
                     : 'bg-gray-100 dark:bg-dark-hover text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-dark-border'
                 }`}
-                title={isRecording ? 'Stop recording' : 'Start voice input'}
+                title={isRecording ? 'Stop recording' : isTranscribing ? 'Transcribing...' : 'Start voice input'}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                </svg>
+                {isTranscribing ? (
+                  <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                  </svg>
+                )}
               </button>
               <input
                 type="text"

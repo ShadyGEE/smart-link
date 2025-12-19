@@ -123,6 +123,8 @@ const api = {
     startRecognition: () => ipcRenderer.invoke(IPC_CHANNELS.VOICE.START_RECOGNITION),
     stopRecognition: () => ipcRenderer.invoke(IPC_CHANNELS.VOICE.STOP_RECOGNITION),
     getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.VOICE.GET_STATUS),
+    transcribe: (audioData: ArrayBuffer, sampleRate: number) =>
+      ipcRenderer.invoke('voice:transcribe', audioData, sampleRate),
     onTranscription: (callback: (text: string) => void) => {
       const handler = (_: IpcRendererEvent, text: string) => callback(text);
       ipcRenderer.on(IPC_CHANNELS.VOICE.TRANSCRIPTION, handler);

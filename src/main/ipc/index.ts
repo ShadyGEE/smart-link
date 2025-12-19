@@ -1,6 +1,9 @@
-import { ipcMain } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants/channels';
 import { authService } from '../services/auth/AuthService';
+import { voiceService } from '../services/voice/VoiceService';
+
+let voiceInitialized = false;
 
 // Import handlers (to be implemented)
 // import { registerAgentHandlers } from './handlers/agent.handler';
@@ -200,6 +203,63 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.SETTINGS.UPDATE, async (_, settings: Record<string, unknown>) => {
     // TODO: Implement settings update
     return { success: true };
+  });
+
+  // Voice handlers
+  ipcMain.handle(IPC_CHANNELS.VOICE.START_RECOGNITION, async (event) => {
+    try {
+      // Initialize voice service if not already done
+      if (!voiceInitialized) {
+        const mainWindow = BrowserWindow.fromWebContents(event.sender);
+        if (mainWindow) {
+          await voiceService.initialize(mainWindow);
+          voiceInitialized = true;
+        }
+      }
+
+      const result = voiceService.startRecording();
+      return { success: result.success, message: result.message };
+    } catch (error) {
+      console.error('Voice start error:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to start voice recognition',
+      };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.VOICE.STOP_RECOGNITION, async () => {
+    const result = voiceService.stopRecording();
+    return { success: result.success, message: result.message };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.VOICE.GET_STATUS, async () => {
+    return {
+      success: true,
+      data: voiceService.getStatus(),
+    };
+  });
+
+  // Handle audio data for transcription
+  ipcMain.handle('voice:transcribe', async (event, audioData: ArrayBuffer, sampleRate: number) => {
+    try {
+      if (!voiceInitialized) {
+        const mainWindow = BrowserWindow.fromWebContents(event.sender);
+        if (mainWindow) {
+          await voiceService.initialize(mainWindow);
+          voiceInitialized = true;
+        }
+      }
+
+      const text = await voiceService.transcribe(audioData, sampleRate);
+      return { success: true, text };
+    } catch (error) {
+      console.error('Transcription error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Transcription failed',
+      };
+    }
   });
 
   console.log('IPC handlers registered');

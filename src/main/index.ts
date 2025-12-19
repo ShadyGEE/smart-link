@@ -5,6 +5,10 @@ import { TrayManager } from './app/TrayManager';
 import { registerIpcHandlers } from './ipc';
 import { IPC_CHANNELS } from '../shared/constants/channels';
 
+// Disable GPU cache to avoid permission errors on Windows
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+app.commandLine.appendSwitch('disable-gpu-program-cache');
+
 console.log('SmartLink starting...');
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling
