@@ -1,0 +1,521 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  avatar       String?
+  jobTitle     String?
+  department   String?
+  role         UserRole   @default(MEMBER)
+  status       UserStatus @default(ACTIVE)
+  preferences  Json?
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  ownedTeams      Team[]            @relation("TeamOwner")
+  teamMemberships TeamMember[]
+  sentMessages    Message[]         @relation("MessageSender")
+  assignedTasks   Task[]            @relation("TaskAssignee")
+  createdTasks    Task[]            @relation("TaskCreator")
+  documents       Document[]        @relation("DocumentOwner")
+  meetings        MeetingAttendee[]
+  agentContexts   AgentContext[]
+  sessions        Session[]
+  reports         Report[]          @relation("ReportSubmitter")
+  notifications   Notification[]
+
+  @@index([email])
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  MEMBER
+  GUEST
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  token        String   @unique
+  refreshToken String   @unique
+  deviceInfo   Json?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+}
+
+// ============================================
+// TEAM & ORGANIZATION
+// ============================================
+
+model Team {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  ownerId     String
+  settings    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner     User         @relation("TeamOwner", fields: [ownerId], references: [id])
+  members   TeamMember[]
+  channels  Channel[]
+  tasks     Task[]
+  documents Document[]
+  meetings  Meeting[]
+  reports   Report[]
+
+  @@index([ownerId])
+}
+
+model TeamMember {
+  id       String   @id @default(uuid())
+  teamId   String
+  userId   String
+  role     TeamRole @default(MEMBER)
+  joinedAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+// ============================================
+// CHAT & MESSAGING
+// ============================================
+
+model Channel {
+  id          String      @id @default(uuid())
+  name        String
+  description String?
+  type        ChannelType @default(PUBLIC)
+  teamId      String?
+  metadata    Json?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  team     Team?     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([teamId])
+}
+
+enum ChannelType {
+  PUBLIC
+  PRIVATE
+  DIRECT
+  AGENT
+}
+
+model Message {
+  id        String      @id @default(uuid())
+  content   String
+  type      MessageType @default(TEXT)
+  channelId String
+  senderId  String
+  replyToId String?
+  metadata  Json?
+  isEdited  Boolean     @default(false)
+  isDeleted Boolean     @default(false)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  channel Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  sender  User      @relation("MessageSender", fields: [senderId], references: [id])
+  replyTo Message?  @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies Message[] @relation("MessageReplies")
+
+  @@index([channelId])
+  @@index([senderId])
+  @@index([createdAt])
+}
+
+enum MessageType {
+  TEXT
+  FILE
+  IMAGE
+  SYSTEM
+  AGENT_RESPONSE
+}
+
+// ============================================
+// TASKS & REPORTS
+// ============================================
+
+model Task {
+  id          String     @id @default(uuid())
+  title       String
+  description String?
+  status      TaskStatus @default(TODO)
+  priority    Priority   @default(MEDIUM)
+  dueDate     DateTime?
+  teamId      String
+  assigneeId  String?
+  creatorId   String
+  parentId    String?
+  metadata    Json?
+  completedAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  assignee User?    @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  creator  User     @relation("TaskCreator", fields: [creatorId], references: [id])
+  parent   Task?    @relation("TaskSubtasks", fields: [parentId], references: [id])
+  subtasks Task[]   @relation("TaskSubtasks")
+  reports  Report[]
+
+  @@index([teamId])
+  @@index([assigneeId])
+  @@index([status])
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  COMPLETED
+  BLOCKED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Report {
+  id          String     @id @default(uuid())
+  title       String
+  content     String
+  type        ReportType
+  teamId      String
+  taskId      String?
+  submitterId String
+  summary     String?
+  metadata    Json?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  team      Team  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  task      Task? @relation(fields: [taskId], references: [id])
+  submitter User  @relation("ReportSubmitter", fields: [submitterId], references: [id])
+
+  @@index([teamId])
+  @@index([submitterId])
+}
+
+enum ReportType {
+  DAILY
+  WEEKLY
+  TASK_COMPLETION
+  PROGRESS
+  ISSUE
+}
+
+// ============================================
+// DOCUMENTS & KNOWLEDGE BASE
+// ============================================
+
+model Document {
+  id        String       @id @default(uuid())
+  title     String
+  content   String?
+  filePath  String?
+  type      DocumentType
+  mimeType  String?
+  size      Int?
+  ownerId   String
+  teamId    String?
+  folderId  String?
+  summary   String?
+  tags      String[]
+  metadata  Json?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  owner  User    @relation("DocumentOwner", fields: [ownerId], references: [id])
+  team   Team?   @relation(fields: [teamId], references: [id])
+  folder Folder? @relation(fields: [folderId], references: [id])
+
+  @@index([ownerId])
+  @@index([teamId])
+  @@index([tags])
+}
+
+model Folder {
+  id        String   @id @default(uuid())
+  name      String
+  parentId  String?
+  createdAt DateTime @default(now())
+
+  parent    Folder?    @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children  Folder[]   @relation("FolderHierarchy")
+  documents Document[]
+}
+
+enum DocumentType {
+  TEXT
+  PDF
+  IMAGE
+  SPREADSHEET
+  PRESENTATION
+  REFERENCE_BOOK
+  OTHER
+}
+
+// ============================================
+// MEETINGS
+// ============================================
+
+model Meeting {
+  id           String        @id @default(uuid())
+  title        String
+  description  String?
+  startTime    DateTime
+  endTime      DateTime
+  location     String?
+  meetingLink  String?
+  teamId       String
+  notes        String?
+  agenda       Json?
+  status       MeetingStatus @default(SCHEDULED)
+  recordingUrl String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  team      Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  attendees MeetingAttendee[]
+
+  @@index([teamId])
+  @@index([startTime])
+}
+
+model MeetingAttendee {
+  id          String         @id @default(uuid())
+  meetingId   String
+  userId      String
+  status      AttendeeStatus @default(PENDING)
+  isOrganizer Boolean        @default(false)
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum AttendeeStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  TENTATIVE
+}
+
+// ============================================
+// AI AGENT CONTEXT
+// ============================================
+
+model AgentContext {
+  id         String      @id @default(uuid())
+  userId     String
+  type       ContextType
+  content    Json
+  importance Int         @default(1)
+  expiresAt  DateTime?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+}
+
+enum ContextType {
+  JOB_ROLE
+  PREFERENCES
+  CONVERSATION_HISTORY
+  TASK_CONTEXT
+  TEAM_CONTEXT
+  REFERENCE_MATERIAL
+}
+
+model AgentConversation {
+  id        String    @id @default(uuid())
+  sessionId String
+  role      String
+  content   String
+  agentType AgentType
+  metadata  Json?
+  createdAt DateTime  @default(now())
+
+  @@index([sessionId])
+  @@index([agentType])
+}
+
+enum AgentType {
+  MAIN
+  RESEARCH
+  DOCUMENT
+  RISK
+  MEETING
+}
+
+// ============================================
+// INTEGRATIONS
+// ============================================
+
+model Integration {
+  id         String            @id @default(uuid())
+  type       IntegrationType
+  userId     String
+  config     Json
+  status     IntegrationStatus @default(INACTIVE)
+  lastSyncAt DateTime?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@unique([type, userId])
+}
+
+enum IntegrationType {
+  EMAIL
+  SLACK
+  DISCORD
+  GOOGLE_CALENDAR
+  MICROSOFT_CALENDAR
+}
+
+enum IntegrationStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+}
+
+model EmailMessage {
+  id          String   @id @default(uuid())
+  messageId   String   @unique
+  from        String
+  to          String[]
+  cc          String[]
+  subject     String
+  body        String
+  htmlBody    String?
+  attachments Json?
+  folder      String
+  isRead      Boolean  @default(false)
+  receivedAt  DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([folder])
+  @@index([from])
+  @@index([receivedAt])
+}
+
+// ============================================
+// NOTIFICATIONS & ANALYTICS
+// ============================================
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  data      Json?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_UPDATED
+  MESSAGE_RECEIVED
+  MEETING_REMINDER
+  REPORT_SUBMITTED
+  AGENT_SUGGESTION
+  RISK_ALERT
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(uuid())
+  eventType String
+  userId    String?
+  teamId    String?
+  data      Json
+  createdAt DateTime @default(now())
+
+  @@index([eventType])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ============================================
+// OFFLINE SYNC
+// ============================================
+
+model SyncQueue {
+  id        String     @id @default(uuid())
+  operation String
+  tableName String
+  recordId  String
+  data      Json
+  status    SyncStatus @default(PENDING)
+  retries   Int        @default(0)
+  createdAt DateTime   @default(now())
+
+  @@index([status])
+}
+
+enum SyncStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
