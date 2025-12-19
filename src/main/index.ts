@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeTheme, session } from 'electron';
 import path from 'path';
 import { WindowManager } from './app/WindowManager';
 import { TrayManager } from './app/TrayManager';
@@ -38,6 +38,25 @@ class Application {
     // App ready
     app.whenReady().then(() => {
       console.log('App is ready, creating main window...');
+
+      // Grant microphone and camera permissions automatically
+      session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+        const allowedPermissions = ['media', 'microphone', 'camera', 'mediaKeySystem'];
+        if (allowedPermissions.includes(permission)) {
+          console.log(`Granting permission: ${permission}`);
+          callback(true);
+        } else {
+          console.log(`Denying permission: ${permission}`);
+          callback(false);
+        }
+      });
+
+      // Also handle permission checks
+      session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+        const allowedPermissions = ['media', 'microphone', 'camera', 'mediaKeySystem'];
+        return allowedPermissions.includes(permission);
+      });
+
       this.createMainWindow();
       console.log('Main window created');
       this.setupTray();
