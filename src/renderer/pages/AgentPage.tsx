@@ -40,14 +40,27 @@ const AgentPage: React.FC = () => {
     } else {
       // Start recording
       try {
+        // Check if mediaDevices is available
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          setVoiceStatus('Microphone not supported in this environment');
+          setTimeout(() => setVoiceStatus(''), 3000);
+          return;
+        }
+
         setVoiceStatus('Requesting microphone access...');
+
+        // Request with simpler constraints first
         const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            sampleRate: 16000,
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true,
-          }
+          audio: true
+        }).catch(async (err) => {
+          // If simple request fails, try with constraints
+          console.log('Simple audio request failed, trying with constraints:', err);
+          return navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+            }
+          });
         });
 
         audioChunksRef.current = [];
@@ -104,10 +117,24 @@ const AgentPage: React.FC = () => {
 
         // Notify backend
         await window.api.voice.startRecognition();
-      } catch (error) {
+      } catch (error: unknown) {
         console.error('Failed to start recording:', error);
-        setVoiceStatus('Microphone access denied');
-        setTimeout(() => setVoiceStatus(''), 3000);
+        const err = error as Error & { name?: string };
+
+        let errorMessage = 'Microphone access denied';
+
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          errorMessage = 'Microphone blocked. Check Windows Settings → Privacy → Microphone';
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          errorMessage = 'No microphone found. Please connect a microphone.';
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          errorMessage = 'Microphone is being used by another app';
+        } else if (err.name === 'OverconstrainedError') {
+          errorMessage = 'Microphone does not meet requirements';
+        }
+
+        setVoiceStatus(errorMessage);
+        setTimeout(() => setVoiceStatus(''), 5000);
       }
     }
   };
