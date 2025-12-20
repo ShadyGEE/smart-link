@@ -1,9 +1,9 @@
-# SmartLink - AI-Powered Management Agent Desktop Application
+# Rafiq - AI-Powered Management Agent Desktop Application
 
 ## Overview
 
-SmartLink is a desktop application built with Electron + React that serves as an "Agent of all Agents" to help managers with their work. It features AI-powered assistance, team communication, document management, and productivity tools.
-
+Rafiq is a desktop application built with Electron + React that serves as an "Agent of all Agents" to help managers with their work. It features AI-powered assistance, team communication, document management, and productivity tools.
+[Working Demo](https://drive.google.com/file/d/1kSmn4U6G2ln85w0y4tvJEQrDONrFtKBG/view?usp=drive_link)
 ## Tech Stack
 
 | Layer | Technology | Purpose |
@@ -25,7 +25,7 @@ SmartLink is a desktop application built with Electron + React that serves as an
 ## Project Structure
 
 ```
-D:\smart-link\
+D:\Rafiq\
 ├── package.json                 # Dependencies and npm scripts
 ├── tsconfig.json                # Base TypeScript config
 ├── tsconfig.main.json           # Electron main process TS config
